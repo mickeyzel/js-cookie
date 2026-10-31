@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1a19">
+<title>Roundabout Lab</title>
+<style>
+  :root {
+    --surface-0: #121211; --surface-1: #1a1a19; --surface-2: #252523; --line: #383835;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --accent: #3987e5; --hot: #d95926;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--surface-0); color: var(--text-primary);
+    font: 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  #stage { position: relative; flex: 0 0 54vh; min-height: 260px; background: #22301f; overflow: hidden; }
+  #view { width: 100%; height: 100%; display: block; touch-action: none; }
+  #panel { flex: 1 1 auto; overflow-y: auto; background: var(--surface-1); padding: 10px 12px 40px; }
+  @media (min-aspect-ratio: 1/1) and (min-width: 700px) {
+    #app { flex-direction: row; }
+    #stage { flex: 1 1 auto; height: 100%; }
+    #panel { flex: 0 0 380px; height: 100%; border-left: 1px solid var(--line); }
+  }
+  .bar { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+  .bar button, .seg button, .btn {
+    background: rgba(26,26,25,.88); color: var(--text-primary); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 11px; font: inherit; font-weight: 600; min-width: 38px; cursor: pointer;
+  }
+  .hud { position: absolute; left: 8px; bottom: 8px; font-size: 11px; color: var(--text-secondary);
+    background: rgba(18,18,17,.72); padding: 5px 8px; border-radius: 6px; pointer-events: none; }
+  .hud .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle;
+    background: linear-gradient(90deg, rgba(217,89,38,.15), rgba(217,89,38,1)); margin: 0 4px; }
+  .tip { position: absolute; left: 8px; top: 8px; font-size: 11px; color: var(--text-secondary);
+    background: rgba(18,18,17,.72); padding: 5px 8px; border-radius: 6px; pointer-events: none; max-width: 55%; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+  .tile { background: var(--surface-2); border-radius: 8px; padding: 6px 8px; }
+  .tile .k { font-size: 11px; color: var(--text-muted); }
+  .tile .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .u { font-size: 11px; color: var(--text-secondary); font-weight: 500; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  .chart { background: var(--surface-2); border-radius: 8px; padding: 6px 8px 4px; position: relative; }
+  .chart .t { font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between; }
+  .chart .t b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .chart canvas { width: 100%; height: 56px; display: block; touch-action: none; }
+  .note { font-size: 11px; color: var(--text-muted); margin: 2px 0 10px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+    margin: 14px 0 6px; font-weight: 700; }
+  .seg { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+  .seg button { background: var(--surface-2); padding: 7px 10px; flex: 1 1 auto; }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .row { margin: 6px 0 10px; }
+  .row label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-secondary); }
+  .row label b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .row .hint { font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; }
+  input[type=range] { width: 100%; height: 30px; margin: 0; accent-color: var(--accent); }
+  .armtabs button { flex: 0 0 auto; min-width: 44px; display: flex; align-items: center; gap: 6px; justify-content: center; }
+  .armtabs .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .info { background: var(--surface-2); border-radius: 8px; padding: 8px; font-size: 12px; color: var(--text-secondary); }
+  .info b { color: var(--text-primary); }
+  .presets button { font-size: 12px; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn { background: var(--surface-2); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div class="tip" id="tip">Drag a road to move it around the circle. Pinch / scroll to zoom.</div>
+    <div class="bar">
+      <button id="bPlay" title="Pause / play">❚❚</button>
+      <button id="bSpeed" title="Simulation speed">1×</button>
+      <button id="bFit" title="Fit view">⤢</button>
+    </div>
+    <div class="hud" id="hud"><span class="sw"></span>tight curve = slower · <span id="clock">0:00</span></div>
+  </div>
+
+  <div id="panel">
+    <div class="tiles">
+      <div class="tile"><div class="k">Throughput</div><div class="v" id="tThr">–</div><div class="u">veh/h</div></div>
+      <div class="tile"><div class="k">Avg wait / car</div><div class="v" id="tWait">–</div><div class="u">s stopped</div></div>
+      <div class="tile"><div class="k">Cars queued</div><div class="v" id="tQ">0</div><div class="u" id="tQs">all roads</div></div>
+      <div class="tile"><div class="k">Ring speed</div><div class="v" id="tRing">–</div><div class="u">km/h avg</div></div>
+      <div class="tile"><div class="k">Tightest bend</div><div class="v" id="tRad">–</div><div class="u" id="tRadU">m radius</div></div>
+      <div class="tile"><div class="k">Avg trip</div><div class="v" id="tTrip">–</div><div class="u">s</div></div>
+    </div>
+    <div class="charts">
+      <div class="chart"><div class="t"><span>Throughput, veh/h</span><b id="c1v"></b></div><canvas id="ch1"></canvas></div>
+      <div class="chart"><div class="t"><span>Cars queued</span><b id="c2v"></b></div><canvas id="ch2"></canvas></div>
+    </div>
+    <div class="note">Last 6 min of sim time. Dashed lines mark when you changed the layout.</div>
+
+    <h3>Quick presets</h3>
+    <div class="seg presets" id="presets">
+      <button data-p="circle">Circle</button>
+      <button data-p="ellipse">Ellipse</button>
+      <button data-p="long">Long oval</button>
+      <button data-p="side">Side entries</button>
+      <button data-p="tiny">Mini + busy</button>
+    </div>
+
+    <h3>Roundabout shape</h3>
+    <div class="seg" id="shapeSeg">
+      <button data-s="ellipse" class="on">Ellipse</button>
+      <button data-s="stadium">Race-track</button>
+      <button data-s="square">Rounded square</button>
+    </div>
+    <div class="row"><label>Size (equivalent radius) <b id="vSize"></b></label>
+      <input type="range" id="size" min="8" max="40" step="0.5"></div>
+    <div class="row"><label>Elongation <b id="vElong"></b></label>
+      <input type="range" id="elong" min="1" max="3.5" step="0.05">
+      <div class="hint"><span>round</span><span>stretched</span></div></div>
+    <div class="row"><label>Rotation <b id="vRot"></b></label>
+      <input type="range" id="rot" min="0" max="180" step="1"></div>
+
+    <h3>Roads</h3>
+    <div class="seg" id="countSeg">
+      <button data-n="3">3 roads</button><button data-n="4">4 roads</button>
+      <button data-n="5">5 roads</button><button data-n="6">6 roads</button>
+    </div>
+    <div class="seg armtabs" id="armTabs"></div>
+    <div class="row"><label>Position around the circle <b id="vTheta"></b></label>
+      <input type="range" id="theta" min="0" max="359" step="1"></div>
+    <div class="row"><label>Approach angle <b id="vSkew"></b></label>
+      <input type="range" id="skew" min="-70" max="70" step="1">
+      <div class="hint"><span>from the left side</span><span>straight at centre</span><span>from the right side</span></div></div>
+    <div class="row"><label>Traffic on this road <b id="vDem"></b></label>
+      <input type="range" id="dem" min="0" max="1500" step="25"></div>
+    <div class="info" id="armInfo"></div>
+
+    <h3>Traffic</h3>
+    <div class="row"><label>Set all roads to <b id="vAll"></b></label>
+      <input type="range" id="all" min="0" max="1500" step="25"></div>
+    <div class="row"><label>Drivers <b id="vGap"></b></label>
+      <input type="range" id="gap" min="0.6" max="1.6" step="0.05">
+      <div class="hint"><span>bold (take small gaps)</span><span>cautious</span></div></div>
+    <div class="seg" id="ovSeg">
+      <button data-o="1" class="on">Show bend speed</button><button data-o="0">Hide</button>
+    </div>
+    <div class="btns">
+      <button class="btn" id="bReset">Reset stats</button>
+      <button class="btn" id="bClear">Clear all cars</button>
+    </div>
+    <div class="note" style="margin-top:12px">
+      Right-hand traffic, single-lane ring, cars circulate anticlockwise and give way to traffic already on the ring.
+      Each car's speed is limited by the bend it's on (sideways grip ≈ 0.22 g), so tight ends of a stretched
+      roundabout or a sharp turn-in from a skewed road slow cars down, and slower entries need bigger gaps.
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+// ---------- constants (metres, seconds) ----------
+const LANE = 3.6, RINGW = 5.5, ARM_LEN = 75, CAR_L = 4.5, CAR_W = 1.9, DS = 0.5, MERGE_OFF = 6;
+const AMAX = 2.0, BCOMF = 2.2, S0 = 2.0, T_HW = 1.1, ALAT = 2.2;
+const VROAD = 50 / 3.6, VRINGCAP = 45 / 3.6;
+const COLORS = ['#3987e5', '#199e70', '#c98500', '#d55181', '#9085e9', '#008300'];
+const LETTERS = 'ABCDEF';
+const D2R = Math.PI / 180;
+const mod = (a, n) => ((a % n) + n) % n;
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const $ = s => document.querySelector(s);
+
+// ---------- state ----------
+const S = {
+  shape: 'ellipse', size: 20, elong: 1, rot: 0, gap: 1, sel: 0, speed: 1, paused: false, overlay: true,
+  arms: defaultArms(4, 450),
+};
+function defaultArms(n, demand) {
+  return Array.from({ length: n }, (_, i) => ({ theta: Math.round(i * 360 / n), skew: 0, demand }));
+}
+
+// ---------- geometry: a resampled polyline with curvature & bend speed ----------
+class Path {
+  constructor(pts, closed, vcap) {
+    this.closed = closed;
+    const P = closed ? pts.concat([pts[0]]) : pts;
+    const cum = [0];
+    let L = 0;
+    for (let i = 1; i < P.length; i++) { L += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); cum.push(L); }
+    this.L = L;
+    const N = Math.max(4, Math.round(L / DS));
+    const ds = L / N; this.ds = ds;
+    const n = closed ? N : N + 1; this.n = n;
+    const x = new Float64Array(n), y = new Float64Array(n);
+    let j = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i * ds;
+      while (j < P.length - 2 && cum[j + 1] < t) j++;
+      const sl = cum[j + 1] - cum[j], f = sl > 1e-9 ? Math.min(1, (t - cum[j]) / sl) : 0;
+      x[i] = P[j][0] + (P[j + 1][0] - P[j][0]) * f;
+      y[i] = P[j][1] + (P[j + 1][1] - P[j][1]) * f;
+    }
+    this.x = x; this.y = y;
+    const id = i => closed ? mod(i, n) : Math.max(0, Math.min(n - 1, i));
+    const h = new Float64Array(n), k0 = new Float64Array(n), k = new Float64Array(n), vl = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = id(i - 1), b = id(i + 1);
+      h[i] = Math.atan2(y[b] - y[a], x[b] - x[a]);
+      const p = id(i - 2), q = id(i + 2);
+      const ax = x[p], ay = y[p], bx = x[i], by = y[i], cx = x[q], cy = y[q];
+      const ab = Math.hypot(bx - ax, by - ay), bc = Math.hypot(cx - bx, cy - by), ca = Math.hypot(ax - cx, ay - cy);
+      const cr = Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+      k0[i] = (ab * bc * ca > 1e-9) ? 2 * cr / (ab * bc * ca) : 0;
+    }
+    for (let i = 0; i < n; i++) {
+      let s = 0, c = 0;
+      for (let w = -3; w <= 3; w++) { const ii = i + w; if (!closed && (ii < 0 || ii >= n)) continue; s += k0[id(ii)]; c++; }
+      k[i] = s / c;
+      vl[i] = Math.min(vcap, Math.sqrt(ALAT / Math.max(k[i], 1e-5)));
+    }
+    this.h = h; this.k = k; this.vl = vl;
+  }
+  norm(s) { return this.closed ? mod(s, this.L) : Math.max(0, Math.min(this.L, s)); }
+  at(s) {
+    s = this.norm(s);
+    const f = s / this.ds; let i = Math.floor(f); const fr = f - i;
+    if (i >= this.n) i = this.n - 1;
+    const i2 = this.closed ? (i + 1) % this.n : Math.min(i + 1, this.n - 1);
+    return {
+      x: this.x[i] + (this.x[i2] - this.x[i]) * fr,
+      y: this.y[i] + (this.y[i2] - this.y[i]) * fr,
+      h: this.h[i] + angDiff(this.h[i2], this.h[i]) * fr,
+    };
+  }
+  idx(s) { const i = Math.round(this.norm(s) / this.ds); return this.closed ? i % this.n : Math.min(i, this.n - 1); }
+  vlAt(s) { return this.vl[this.idx(s)]; }
+}
+
+function ringPoints() {
+  const M = 1600, pts = [], r = S.size, e = S.elong;
+  if (S.shape === 'stadium') {
+    // two half circles joined by straights; area kept equal to a circle of radius `size`
+    const rr = r * Math.sqrt(Math.PI / (Math.PI + 4 * (e - 1))), l = rr * (e - 1);
+    const seg = (n, f) => { for (let i = 0; i < n; i++) pts.push(f(i / n)); };
+    seg(300, t => { const a = -Math.PI / 2 + t * Math.PI; return [l + rr * Math.cos(a), rr * Math.sin(a)]; });
+    seg(200, t => [l - 2 * l * t, rr]);
+    seg(300, t => { const a = Math.PI / 2 + t * Math.PI; return [-l + rr * Math.cos(a), rr * Math.sin(a)]; });
+    seg(200, t => [-l + 2 * l * t, -rr]);
+  } else {
+    const A = r * Math.sqrt(e), B = r / Math.sqrt(e);
+    for (let i = 0; i < M; i++) {
+      const t = i / M * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+      if (S.shape === 'square') {
+        const p = 2 / 4; // superellipse n=4
+        pts.push([A * 0.9 * Math.sign(c) * Math.pow(Math.abs(c), p), B * 0.9 * Math.sign(s) * Math.pow(Math.abs(s), p)]);
+      } else pts.push([A * c, B * s]);
+    }
+  }
+  const cr = Math.cos(S.rot * D2R), sr = Math.sin(S.rot * D2R);
+  return pts.map(([x, y]) => [x * cr - y * sr, x * sr + y * cr]);
+}
+
+function nearest(ring, p) {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < ring.n; i++) {
+    const d = (ring.x[i] - p[0]) ** 2 + (ring.y[i] - p[1]) ** 2;
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return { i: bi, d: Math.sqrt(bd) };
+}
+function bez(p0, p1, p2, p3, t) {
+  const u = 1 - t;
+  return [u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+          u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1]];
+}
+
+function buildArm(ring, a) {
+  const th = a.theta * D2R, sk = a.skew * D2R;
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < ring.n; i++) {
+    const d = Math.abs(angDiff(Math.atan2(ring.y[i], ring.x[i]), th));
+    if (d < bd) { bd = d; bi = i; }
+  }
+  const E = [ring.x[bi], ring.y[bi]];
+  const u = [Math.cos(th + sk), Math.sin(th + sk)];               // outward road direction
+  const nIn = [-u[1], u[0]];                                      // entry lane side (driver's right)
+  const offIn = [nIn[0] * LANE / 2, nIn[1] * LANE / 2], offOut = [-offIn[0], -offIn[1]];
+  const thr = RINGW / 2 + 1.6;
+  const clearG = off => {
+    for (let g = RINGW / 2; g < 90; g += 0.5) {
+      const p = [E[0] + u[0] * g + off[0], E[1] + u[1] * g + off[1]];
+      if (nearest(ring, p).d >= thr) return g;
+    }
+    return 90;
+  };
+  const gi = clearG(offIn), go = clearG(offOut);
+  const Y = [E[0] + u[0] * gi + offIn[0], E[1] + u[1] * gi + offIn[1]];
+  const X = [E[0] + u[0] * go + offOut[0], E[1] + u[1] * go + offOut[1]];
+  const sMerge = mod(nearest(ring, Y).i * ring.ds + MERGE_OFF, ring.L);
+  const sDiv = mod(nearest(ring, X).i * ring.ds - MERGE_OFF, ring.L);
+  const M = ring.at(sMerge), D = ring.at(sDiv);
+  const tM = [Math.cos(M.h), Math.sin(M.h)], tD = [Math.cos(D.h), Math.sin(D.h)];
+  // entry: straight approach then a smooth curve that joins the ring tangentially
+  const kE = 0.45 * Math.hypot(M.x - Y[0], M.y - Y[1]);
+  const Mp = [M.x, M.y];
+  const ep = [[Y[0] + u[0] * ARM_LEN, Y[1] + u[1] * ARM_LEN], Y];
+  for (let i = 1; i <= 40; i++) ep.push(bez(Y, [Y[0] - u[0] * kE, Y[1] - u[1] * kE], [M.x - tM[0] * kE, M.y - tM[1] * kE], Mp, i / 40));
+  const entry = new Path(ep, false, VROAD);
+  const kX = 0.45 * Math.hypot(D.x - X[0], D.y - X[1]);
+  const Dp = [D.x, D.y], xp = [];
+  for (let i = 0; i <= 40; i++) xp.push(bez(Dp, [D.x + tD[0] * kX, D.y + tD[1] * kX], [X[0] - u[0] * kX, X[1] - u[1] * kX], X, i / 40));
+  xp.push([X[0] + u[0] * ARM_LEN, X[1] + u[1] * ARM_LEN]);
+  const exit = new Path(xp, false, VROAD);
+  const Ye = ARM_LEN, exitCurveL = exit.L - ARM_LEN;
+  const curveStats = (p, a0, a1) => {
+    let km = 0, vm = Infinity;
+    for (let i = p.idx(a0); i <= p.idx(a1); i++) { km = Math.max(km, p.k[i]); vm = Math.min(vm, p.vl[i]); }
+    return { r: 1 / Math.max(km, 1e-4), v: vm };
+  };
+  const inS = curveStats(entry, Ye, entry.L), outS = curveStats(exit, 0, exitCurveL);
+  const turnIn = Math.abs(angDiff(Math.atan2(-u[1], -u[0]), M.h)) / D2R;
+  return { E, u, nIn, gi, go, Y, X, sMerge, sDiv, entry, exit, Ye, exitCurveL, inS, outS, turnIn };
+}
+
+let G = null;
+function buildGeometry() {
+  const ring = new Path(ringPoints(), true, VRINGCAP);
+  let km = 0, vm = Infinity;
+  for (let i = 0; i < ring.n; i++) { km = Math.max(km, ring.k[i]); vm = Math.min(vm, ring.vl[i]); }
+  const arms = S.arms.map(a => buildArm(ring, a));
+  return { ring, arms, minR: 1 / km, minV: vm };
+}
+const needOf = (ai, ao) => mod(G.arms[ao].sDiv - G.arms[ai].sMerge, G.ring.L);
+
+// ---------- simulation ----------
+let cars = [], nid = 1, simT = 0, trips = [], pending = [], hist = [], marks = [], statsT0 = 0, lastHist = 0;
+
+function rebuild(mark) {
+  const old = G;
+  G = buildGeometry();
+  if (old && old.arms.length === G.arms.length) {
+    for (const c of cars) {
+      const oa = old.arms[c.ai], na = G.arms[c.ai], ox = old.arms[c.ao], nx = G.arms[c.ao];
+      if (c.stage === 'in' && c.d > oa.Ye) c.d = na.Ye + (c.d - oa.Ye) / (oa.entry.L - oa.Ye) * (na.entry.L - na.Ye);
+      const nn = needOf(c.ai, c.ao);
+      if (c.stage === 'ring') c.rd = c.rd / c.need * nn;
+      c.need = nn;
+      if (c.stage === 'out') c.d = c.d < ox.exitCurveL ? c.d / ox.exitCurveL * nx.exitCurveL : c.d - ox.exitCurveL + nx.exitCurveL;
+    }
+  } else { cars = []; }
+  while (pending.length < G.arms.length) pending.push(0);
+  pending.length = G.arms.length;
+  if (mark) {
+    const last = marks[marks.length - 1];
+    if (last !== undefined && simT - last < 4) marks[marks.length - 1] = simT; else marks.push(simT);
+  }
+  updateArmInfo();
+}
+
+function vlimRoute(c, a) {
+  const A = G.arms[c.ai], X = G.arms[c.ao];
+  let rd;
+  if (c.stage === 'in') {
+    if (c.d + a < A.entry.L) return A.entry.vlAt(c.d + a);
+    rd = c.d + a - A.entry.L;
+  } else if (c.stage === 'ring') rd = c.rd + a;
+  else return X.exit.vlAt(c.d + a);
+  if (rd < c.need) return G.ring.vlAt(A.sMerge + rd);
+  return X.exit.vlAt(rd - c.need);
+}
+function desired(c) {
+  let m = Infinity;
+  for (let a = 0; a <= 40; a += 2) {
+    const vl = vlimRoute(c, a), vv = Math.sqrt(vl * vl + 2 * BCOMF * 0.6 * a);
+    if (vv < m) m = vv;
+  }
+  return m * c.vf;
+}
+function accel(c, gap, lv) {
+  const v0 = Math.max(desired(c), 0.5), v = c.v;
+  let a = AMAX * (1 - Math.pow(v / v0, 4));
+  if (gap < Infinity) {
+    const ss = S0 + Math.max(0, v * T_HW + v * (v - lv) / (2 * Math.sqrt(AMAX * BCOMF)));
+    a -= AMAX * Math.pow(ss / Math.max(gap, 0.2), 2);
+  }
+  return Math.max(-9, Math.min(AMAX, a));
+}
+function aheadOnRing(pos, self, occ, L, skipArm) {
+  let best = null, bd = Infinity;
+  for (const o of occ) {
+    if (o.c === self) continue;
+    if (skipArm >= 0 && o.c.stage === 'in' && o.c.ai === skipArm) continue;
+    const d = mod(o.pos - pos, L);
+    if (d > 0.01 && d < bd) { bd = d; best = o; }
+  }
+  return best ? { dist: bd, v: best.c.v } : null;
+}
+function canEnter(c, k, occ) {
+  const A = G.arms[k], L = G.ring.L, Mp = A.sMerge;
+  const D = A.entry.L - c.d;
+  const vAvg = Math.max((c.v + A.inS.v) / 2, 2.5);
+  const need = 0.55 * D / vAvg * S.gap * c.gf + 1.2;    // seconds the gap must offer
+  for (const o of occ) {
+    const oc = o.c;
+    if (oc.stage === 'out' || (oc.stage === 'in' && oc.ai === k)) continue;
+    const down = mod(o.pos - Mp, L), up = mod(Mp - o.pos, L);
+    if (down < CAR_L + 2 + oc.v * 0.4) return false;
+    if (oc.stage === 'ring' && oc.need - oc.rd < up) continue;   // it will leave before reaching us
+    if (up < L * 0.8 && (up < CAR_L + 4 || up / Math.max(oc.v, 0.5) < need)) return false;
+  }
+  return true;
+}
+
+function step(dt) {
+  simT += dt;
+  const ring = G.ring, L = ring.L, arms = G.arms, n = arms.length;
+  // spawn
+  for (let k = 0; k < n; k++) {
+    if (Math.random() < S.arms[k].demand / 3600 * dt) pending[k]++;
+    if (pending[k] > 0) {
+      let last = null;
+      for (const c of cars) if (c.stage === 'in' && c.ai === k && (!last || c.d < last.d)) last = c;
+      if (!last || last.d > CAR_L + S0 + 1.5) {
+        let ao; do { ao = Math.floor(Math.random() * n); } while (ao === k);
+        cars.push({ id: nid++, ai: k, ao, stage: 'in', d: 0, v: last ? Math.min(last.v, VROAD * 0.8) : VROAD * 0.8,
+          a: 0, rd: 0, need: needOf(k, ao), committed: false, ok: false, t0: simT, stopT: 0,
+          vf: 0.9 + Math.random() * 0.2, gf: 0.85 + Math.random() * 0.3 });
+        pending[k]--;
+      }
+    }
+  }
+  // who is on (or about to touch) the ring
+  const occ = [], inL = arms.map(() => []), outL = arms.map(() => []);
+  for (const c of cars) {
+    if (c.stage === 'ring') { c.pos = mod(arms[c.ai].sMerge + c.rd, L); occ.push({ c, pos: c.pos }); }
+    else if (c.stage === 'in') {
+      inL[c.ai].push(c);
+      const r = arms[c.ai].entry.L - c.d;
+      if (r < 6) occ.push({ c, pos: mod(arms[c.ai].sMerge - r, L) });
+    } else {
+      outL[c.ao].push(c);
+      if (c.d < 6) occ.push({ c, pos: mod(arms[c.ao].sDiv + c.d, L) });
+    }
+  }
+  for (let k = 0; k < n; k++) { inL[k].sort((a, b) => b.d - a.d); outL[k].sort((a, b) => a.d - b.d); }
+  // accelerations
+  for (let k = 0; k < n; k++) {
+    const A = arms[k], list = inL[k];
+    let firstFound = false;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i], ld = i > 0 ? list[i - 1] : null;
+      let gap = Infinity, lv = 0;
+      if (ld) { gap = ld.d - CAR_L - c.d; lv = ld.v; }
+      c.waiting = false;
+      if (!c.committed) {
+        if (!firstFound) {
+          firstFound = true;
+          const toY = A.Ye - c.d;
+          if (toY < 45) {
+            c.ok = canEnter(c, k, occ);
+            if (!c.ok) { const g = toY + S0 - 0.3; if (g < gap) { gap = Math.max(g, 0.05); lv = 0; } c.waiting = c.v < 1; }
+          } else c.ok = false;
+        } else c.ok = false;
+      }
+      if ((c.committed || c.ok) && A.entry.L - c.d < 35) {
+        const r = aheadOnRing(mod(A.sMerge - (A.entry.L - c.d), L), c, occ, L, k);
+        if (r && r.dist < 40 && r.dist - CAR_L < gap) { gap = r.dist - CAR_L; lv = r.v; }
+      }
+      c.a = accel(c, gap, lv);
+    }
+  }
+  for (const o of occ) {
+    const c = o.c;
+    if (c.stage !== 'ring') continue;
+    const rem = c.need - c.rd;
+    let gap = Infinity, lv = 0;
+    const r = aheadOnRing(c.pos, c, occ, L, -1);
+    if (r && r.dist <= rem + 3) { gap = r.dist - CAR_L; lv = r.v; }
+    const ol = outL[c.ao];
+    if (ol.length) { const g2 = rem + ol[0].d - CAR_L; if (g2 < gap) { gap = g2; lv = ol[0].v; } }
+    c.a = accel(c, gap, lv);
+  }
+  for (let k = 0; k < n; k++) {
+    const list = outL[k];
+    for (let i = 0; i < list.length; i++) {
+      const ld = list[i + 1];
+      list[i].a = accel(list[i], ld ? ld.d - CAR_L - list[i].d : Infinity, ld ? ld.v : 0);
+    }
+  }
+  // integrate
+  const done = [];
+  for (const c of cars) {
+    c.v = Math.max(0, c.v + c.a * dt);
+    const dd = c.v * dt;
+    if (c.v < 1) c.stopT += dt;
+    if (c.stage === 'in') {
+      const A = arms[c.ai];
+      c.d += dd;
+      if (!c.committed && c.d >= A.Ye) c.committed = true;
+      if (c.d >= A.entry.L) { c.stage = 'ring'; c.rd = c.d - A.entry.L; }
+    } else if (c.stage === 'ring') {
+      c.rd += dd;
+      if (c.rd >= c.need) { c.stage = 'out'; c.d = c.rd - c.need; }
+    } else {
+      c.d += dd;
+      if (c.d >= arms[c.ao].exit.L - 0.5) done.push(c);
+    }
+  }
+  if (done.length) {
+    for (const c of done) trips.push({ t: simT, trip: simT - c.t0, stop: c.stopT });
+    cars = cars.filter(c => !done.includes(c));
+  }
+  while (trips.length > 400) trips.shift();
+  if (simT - lastHist >= 5) {
+    lastHist = simT;
+    const st = stats();
+    hist.push({ t: simT, thr: st.thr, q: st.q });
+    while (hist.length && simT - hist[0].t > 360) hist.shift();
+    while (marks.length && simT - marks[0] > 360) marks.shift();
+  }
+}
+
+function stats() {
+  const win = Math.min(120, simT - statsT0);
+  const recent = trips.filter(t => simT - t.t <= 120 && t.t > statsT0);
+  const thr = win > 10 ? recent.length * 3600 / win : null;
+  const last = trips.filter(t => t.t > statsT0).slice(-40);
+  const wait = last.length ? last.reduce((s, t) => s + t.stop, 0) / last.length : null;
+  const trip = last.length ? last.reduce((s, t) => s + t.trip, 0) / last.length : null;
+  const qs = G.arms.map((A, k) => pending[k] + cars.filter(c => c.stage === 'in' && c.ai === k && !c.committed && c.v < 2.5).length);
+  const q = qs.reduce((a, b) => a + b, 0);
+  const rc = cars.filter(c => c.stage === 'ring');
+  const ringV = rc.length ? rc.reduce((s, c) => s + c.v, 0) / rc.length * 3.6 : null;
+  return { thr, wait, trip, q, qs, ringV };
+}
+
+// ---------- rendering ----------
+const cv = $('#view'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, zoom = 1, panX = 0, panY = 0, baseScale = 4;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+  const r = cv.getBoundingClientRect(); W = r.width; H = r.height;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  fitBase();
+  for (const c of [ch1, ch2]) { const rr = c.getBoundingClientRect(); c.width = rr.width * DPR; c.height = rr.height * DPR; }
+}
+function fitBase() {
+  let ext = 0;
+  for (let i = 0; i < G.ring.n; i += 4) ext = Math.max(ext, Math.hypot(G.ring.x[i], G.ring.y[i]));
+  baseScale = Math.min(W, H) / 2 / (ext + 40);
+}
+const sc = () => baseScale * zoom;
+const toScreen = (x, y) => [W / 2 + panX + x * sc(), H / 2 + panY - y * sc()];
+const toWorld = (sx, sy) => [(sx - W / 2 - panX) / sc(), -(sy - H / 2 - panY) / sc()];
+
+function strokePath(p, w, color) {
+  ctx.beginPath();
+  for (let i = 0; i < p.n; i++) i ? ctx.lineTo(p.x[i], p.y[i]) : ctx.moveTo(p.x[i], p.y[i]);
+  if (p.closed) ctx.closePath();
+  ctx.lineWidth = w; ctx.strokeStyle = color; ctx.stroke();
+}
+function speedOverlay(p, from, to) {
+  ctx.lineWidth = 0.9;
+  const ref = 30 / 3.6;
+  for (let i = from; i < to; i++) {
+    const j = p.closed ? (i + 1) % p.n : i + 1;
+    if (j >= p.n) break;
+    const t = Math.max(0, Math.min(1, (ref - p.vl[i]) / (ref - 3)));
+    if (t < 0.04) continue;
+    ctx.strokeStyle = `rgba(217,89,38,${(0.12 + 0.88 * t).toFixed(2)})`;
+    ctx.beginPath(); ctx.moveTo(p.x[i], p.y[i]); ctx.lineTo(p.x[j], p.y[j]); ctx.stroke();
+  }
+}
+function carPose(c) {
+  const A = G.arms[c.ai], X = G.arms[c.ao], m = c.d - CAR_L / 2;
+  if (c.stage === 'in') return A.entry.at(m);
+  if (c.stage === 'ring') {
+    const rm = c.rd - CAR_L / 2;
+    return rm < 0 ? A.entry.at(A.entry.L + rm) : G.ring.at(A.sMerge + rm);
+  }
+  return m < 0 ? G.ring.at(X.sDiv + m) : X.exit.at(m);
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#22301f'; ctx.fillRect(0, 0, cv.width, cv.height);
+  const s = sc() * DPR;
+  ctx.setTransform(s, 0, 0, -s, (W / 2 + panX) * DPR, (H / 2 + panY) * DPR);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+  const { ring, arms } = G;
+  // selected arm halo
+  const SA = arms[S.sel];
+  if (SA) { ctx.globalAlpha = 0.28; strokePath(SA.entry, LANE + 4, COLORS[S.sel]); strokePath(SA.exit, LANE + 4, COLORS[S.sel]); ctx.globalAlpha = 1; }
+  // asphalt
+  for (const A of arms) { strokePath(A.entry, LANE + 0.4, '#4a4a47'); strokePath(A.exit, LANE + 0.4, '#4a4a47'); }
+  strokePath(ring, RINGW, '#4a4a47');
+  // island
+  ctx.beginPath();
+  for (let i = 0; i < ring.n; i++) {
+    const h = ring.h[i], x = ring.x[i] - Math.sin(h) * RINGW / 2, y = ring.y[i] + Math.cos(h) * RINGW / 2;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath(); ctx.fillStyle = '#2f4a2a'; ctx.fill();
+  ctx.lineWidth = 0.35; ctx.strokeStyle = '#9a9990'; ctx.stroke();
+  // markings
+  ctx.strokeStyle = '#e8e6df';
+  for (const A of arms) {
+    ctx.setLineDash([3, 3]); ctx.lineWidth = 0.15;
+    const g = Math.max(A.gi, A.go);
+    ctx.beginPath(); ctx.moveTo(A.E[0] + A.u[0] * g, A.E[1] + A.u[1] * g);
+    ctx.lineTo(A.E[0] + A.u[0] * (g + ARM_LEN), A.E[1] + A.u[1] * (g + ARM_LEN)); ctx.stroke();
+    ctx.setLineDash([0.6, 0.45]); ctx.lineWidth = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(A.Y[0] - A.nIn[0] * LANE / 2, A.Y[1] - A.nIn[1] * LANE / 2);
+    ctx.lineTo(A.Y[0] + A.nIn[0] * LANE / 2, A.Y[1] + A.nIn[1] * LANE / 2); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  if (S.overlay) {
+    speedOverlay(ring, 0, ring.n);
+    for (const A of arms) { speedOverlay(A.entry, A.entry.idx(A.Ye), A.entry.n); speedOverlay(A.exit, 0, A.exit.idx(A.exitCurveL)); }
+  }
+  // cars
+  for (const c of cars) {
+    const p = carPose(c);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.h);
+    ctx.fillStyle = COLORS[c.ai % COLORS.length];
+    roundRect(-CAR_L / 2, -CAR_W / 2, CAR_L, CAR_W, 0.5); ctx.fill();
+    ctx.fillStyle = 'rgba(10,14,20,.55)'; ctx.fillRect(0.2, -CAR_W / 2 + 0.25, 1.1, CAR_W - 0.5);
+    if (c.a < -1 || c.v < 0.3) { ctx.fillStyle = '#ff3b30'; ctx.fillRect(-CAR_L / 2, -CAR_W / 2 + 0.1, 0.35, 0.5); ctx.fillRect(-CAR_L / 2, CAR_W / 2 - 0.6, 0.35, 0.5); }
+    ctx.restore();
+  }
+  // labels in screen space
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const st = lastStats;
+  ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  arms.forEach((A, k) => {
+    const d = Math.max(A.gi, A.go) + 16, side = LANE * 2.2;
+    const wx = A.E[0] + A.u[0] * d - A.nIn[0] * side, wy = A.E[1] + A.u[1] * d - A.nIn[1] * side;
+    let [x, y] = toScreen(wx, wy);
+    const q = st ? st.qs[k] : 0;
+    const txt = q > 0 ? (pending[k] > 0 ? `${q} queued (+${pending[k]} off-map)` : `${q} queued`) : '';
+    ctx.font = '600 11px system-ui, sans-serif';
+    const tw = txt ? ctx.measureText(txt).width + 10 : 20;
+    x = Math.max(tw / 2 + 4, Math.min(W - tw / 2 - 4, x)); y = Math.max(14, Math.min(H - 34, y));
+    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.fillStyle = COLORS[k]; ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
+    if (k === S.sel) { ctx.lineWidth = 2; ctx.strokeStyle = '#f0efec'; ctx.stroke(); }
+    ctx.fillStyle = '#fff'; ctx.fillText(LETTERS[k], x, y + 0.5);
+    if (txt) {
+      ctx.font = '600 11px system-ui, sans-serif';
+      const w = tw;
+      ctx.fillStyle = 'rgba(18,18,17,.8)'; roundRect(x - w / 2, y + 13, w, 17, 5); ctx.fill();
+      ctx.fillStyle = '#f0efec'; ctx.fillText(txt, x, y + 21.5);
+      ctx.font = '600 12px system-ui, sans-serif';
+    }
+  });
+}
+
+// ---------- mini charts (one series each, shared x = sim time) ----------
+const ch1 = $('#ch1'), ch2 = $('#ch2');
+const hover = { ch1: null, ch2: null };
+function drawChart(c, key, valEl, fmt) {
+  const g = c.getContext('2d'), w = c.width, h = c.height;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, w, h);
+  const pts = hist.filter(p => p[key] !== null);
+  const t1 = simT, t0 = t1 - 360;
+  const max = Math.max(1, ...pts.map(p => p[key])) * 1.15;
+  const X = t => (t - t0) / 360 * w, Y = v => h - 3 * DPR - v / max * (h - 8 * DPR);
+  g.strokeStyle = '#383835'; g.lineWidth = 1 * DPR; g.beginPath(); g.moveTo(0, Y(0)); g.lineTo(w, Y(0)); g.stroke();
+  g.setLineDash([3 * DPR, 3 * DPR]); g.strokeStyle = '#8f8e86';
+  for (const m of marks) { const x = X(m); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+  g.setLineDash([]);
+  if (pts.length > 1) {
+    g.strokeStyle = '#3987e5'; g.lineWidth = 2 * DPR; g.lineJoin = 'round'; g.beginPath();
+    pts.forEach((p, i) => i ? g.lineTo(X(p.t), Y(p[key])) : g.moveTo(X(p.t), Y(p[key]))); g.stroke();
+  }
+  let show = pts[pts.length - 1];
+  const hx = hover[c.id];
+  if (hx !== null && pts.length) {
+    show = pts.reduce((b, p) => Math.abs(X(p.t) - hx * DPR) < Math.abs(X(b.t) - hx * DPR) ? p : b, pts[0]);
+    g.strokeStyle = '#c3c2b7'; g.lineWidth = 1 * DPR; g.beginPath(); g.moveTo(X(show.t), 0); g.lineTo(X(show.t), h); g.stroke();
+  }
+  if (show) {
+    g.fillStyle = '#3987e5'; g.strokeStyle = '#252523'; g.lineWidth = 2 * DPR;
+    g.beginPath(); g.arc(X(show.t), Y(show[key]), 4 * DPR, 0, Math.PI * 2); g.fill(); g.stroke();
+    valEl.textContent = fmt(show[key]) + (hx !== null ? ` @ ${clock(show.t)}` : '');
+  } else valEl.textContent = '';
+}
+for (const c of [ch1, ch2]) {
+  const set = e => { const r = c.getBoundingClientRect(); hover[c.id] = e.clientX - r.left; };
+  c.addEventListener('pointermove', set); c.addEventListener('pointerdown', set);
+  c.addEventListener('pointerleave', () => hover[c.id] = null);
+  c.addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') hover[c.id] = null; });
+}
+
+// ---------- UI ----------
+const clock = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+let lastStats = null;
+function updateStats() {
+  const st = stats(); lastStats = st;
+  $('#tThr').textContent = st.thr === null ? '–' : Math.round(st.thr);
+  $('#tWait').textContent = st.wait === null ? '–' : st.wait.toFixed(1);
+  $('#tTrip').textContent = st.trip === null ? '–' : st.trip.toFixed(0);
+  $('#tQ').textContent = st.q;
+  const worst = st.qs.indexOf(Math.max(...st.qs));
+  $('#tQs').textContent = st.q > 0 ? `most on ${LETTERS[worst]}` : 'all roads';
+  $('#tRing').textContent = st.ringV === null ? '–' : st.ringV.toFixed(0);
+  $('#tRad').textContent = G.minR.toFixed(1);
+  $('#tRadU').textContent = `m radius · ${(G.minV * 3.6).toFixed(0)} km/h`;
+  $('#clock').textContent = clock(simT);
+  drawChart(ch1, 'thr', $('#c1v'), v => Math.round(v));
+  drawChart(ch2, 'q', $('#c2v'), v => Math.round(v));
+}
+function updateArmInfo() {
+  const A = G.arms[S.sel]; if (!A) return;
+  $('#armInfo').innerHTML =
+    `<b>Road ${LETTERS[S.sel]}</b> · turn into ring <b>${A.turnIn.toFixed(0)}°</b><br>` +
+    `Entry curve: radius <b>${A.inS.r.toFixed(1)} m</b>, max <b>${(A.inS.v * 3.6).toFixed(0)} km/h</b><br>` +
+    `Exit curve: radius <b>${A.outS.r.toFixed(1)} m</b>, max <b>${(A.outS.v * 3.6).toFixed(0)} km/h</b>`;
+}
+function syncControls() {
+  const a = S.arms[S.sel];
+  $('#size').value = S.size; $('#vSize').textContent = `${S.size} m`;
+  $('#elong').value = S.elong; $('#vElong').textContent = `${(+S.elong).toFixed(2)} : 1`;
+  $('#rot').value = S.rot; $('#vRot').textContent = `${S.rot}°`;
+  $('#theta').value = a.theta; $('#vTheta').textContent = `${a.theta}°`;
+  $('#skew').value = a.skew; $('#vSkew').textContent = `${a.skew > 0 ? '+' : ''}${a.skew}°`;
+  $('#dem').value = a.demand; $('#vDem').textContent = `${a.demand} veh/h`;
+  const avg = Math.round(S.arms.reduce((s, x) => s + x.demand, 0) / S.arms.length / 25) * 25;
+  $('#all').value = avg; $('#vAll').textContent = `${avg} veh/h`;
+  $('#gap').value = S.gap; $('#vGap').textContent = S.gap < 0.9 ? 'bold' : S.gap > 1.15 ? 'cautious' : 'normal';
+  document.querySelectorAll('#shapeSeg button').forEach(b => b.classList.toggle('on', b.dataset.s === S.shape));
+  document.querySelectorAll('#countSeg button').forEach(b => b.classList.toggle('on', +b.dataset.n === S.arms.length));
+  document.querySelectorAll('#ovSeg button').forEach(b => b.classList.toggle('on', (b.dataset.o === '1') === S.overlay));
+  $('#armTabs').innerHTML = S.arms.map((_, k) =>
+    `<button data-k="${k}" class="${k === S.sel ? 'on' : ''}"><span class="dot" style="background:${COLORS[k]}"></span>${LETTERS[k]}</button>`).join('');
+  updateArmInfo();
+}
+let geoQueued = false;
+function geoChanged() {
+  if (geoQueued) return; geoQueued = true;
+  requestAnimationFrame(() => { geoQueued = false; rebuild(true); });
+}
+const onInput = (id, f, geo = true) => $(id).addEventListener('input', e => { f(+e.target.value); syncControls(); if (geo) geoChanged(); });
+onInput('#size', v => S.size = v);
+onInput('#elong', v => S.elong = v);
+onInput('#rot', v => S.rot = v);
+onInput('#theta', v => S.arms[S.sel].theta = v);
+onInput('#skew', v => S.arms[S.sel].skew = v);
+onInput('#dem', v => S.arms[S.sel].demand = v, false);
+onInput('#all', v => S.arms.forEach(a => a.demand = v), false);
+onInput('#gap', v => S.gap = v, false);
+$('#shapeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.shape = b.dataset.s; syncControls(); rebuild(true); });
+$('#countSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const n = +b.dataset.n; if (n === S.arms.length) return;
+  const dem = S.arms[0].demand; S.arms = defaultArms(n, dem); S.sel = 0;
+  syncControls(); rebuild(true); fitBase();
+});
+$('#armTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.sel = +b.dataset.k; syncControls(); });
+$('#ovSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.overlay = b.dataset.o === '1'; syncControls(); });
+$('#bReset').onclick = () => { statsT0 = simT; hist = []; marks = []; };
+$('#bClear').onclick = () => { cars = []; pending = pending.map(() => 0); };
+$('#bPlay').onclick = () => { S.paused = !S.paused; $('#bPlay').textContent = S.paused ? '▶' : '❚❚'; };
+$('#bSpeed').onclick = () => { S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 4 : S.speed === 4 ? 8 : 1; $('#bSpeed').textContent = S.speed + '×'; };
+$('#bFit').onclick = () => { zoom = 1; panX = 0; panY = 0; };
+
+const PRESETS = {
+  circle: () => Object.assign(S, { shape: 'ellipse', size: 20, elong: 1, rot: 0, arms: defaultArms(4, 450) }),
+  ellipse: () => Object.assign(S, { shape: 'ellipse', size: 20, elong: 1.8, rot: 0, arms: defaultArms(4, 450) }),
+  long: () => Object.assign(S, { shape: 'stadium', size: 20, elong: 2.8, rot: 0, arms: defaultArms(4, 450) }),
+  side: () => { Object.assign(S, { shape: 'ellipse', size: 20, elong: 1, rot: 0, arms: defaultArms(4, 450) }); S.arms.forEach(a => a.skew = 45); },
+  tiny: () => Object.assign(S, { shape: 'ellipse', size: 11, elong: 1, rot: 0, arms: defaultArms(4, 800) }),
+};
+$('#presets').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const nBefore = S.arms.length; PRESETS[b.dataset.p](); S.sel = Math.min(S.sel, S.arms.length - 1);
+  if (S.arms.length !== nBefore) cars = [];
+  syncControls(); rebuild(true); fitBase();
+});
+
+// ---------- canvas gestures: drag road / pan / pinch ----------
+const ptrs = new Map();
+let drag = null, pinch = null;
+function hitArm(wx, wy) {
+  let best = -1, bd = 14 / sc() + 3;
+  G.arms.forEach((A, k) => {
+    const rx = wx - A.E[0], ry = wy - A.E[1];
+    const t = rx * A.u[0] + ry * A.u[1];
+    if (t < A.gi - 2 || t > A.gi + ARM_LEN) return;
+    const d = Math.abs(rx * A.nIn[0] + ry * A.nIn[1]);
+    if (d < bd) { bd = d; best = k; }
+  });
+  return best;
+}
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: zoom }; drag = null; return;
+  }
+  const [wx, wy] = toWorld(e.offsetX, e.offsetY), k = hitArm(wx, wy);
+  if (k >= 0) { S.sel = k; syncControls(); drag = { arm: k }; $('#tip').style.display = 'none'; }
+  else drag = { pan: true, x: e.offsetX, y: e.offsetY, px: panX, py: panY };
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+  if (pinch && ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    zoom = Math.max(0.4, Math.min(6, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d)); return;
+  }
+  if (!drag) return;
+  if (drag.arm !== undefined) {
+    const [wx, wy] = toWorld(e.offsetX, e.offsetY);
+    S.arms[drag.arm].theta = Math.round(mod(Math.atan2(wy, wx) / D2R, 360));
+    syncControls(); geoChanged();
+  } else { panX = drag.px + e.offsetX - drag.x; panY = drag.py + e.offsetY - drag.y; }
+});
+const up = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size) drag = null; };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+cv.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(0.4, Math.min(6, zoom * Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
+let lastTap = 0;
+cv.addEventListener('pointerup', () => { const n = performance.now(); if (n - lastTap < 300) { zoom = 1; panX = panY = 0; } lastTap = n; });
+
+// ---------- main loop ----------
+G = buildGeometry(); pending = G.arms.map(() => 0);
+syncControls();
+resize();
+setTimeout(() => $('#tip').style.display = 'none', 9000);
+window.addEventListener('resize', resize);
+let prev = performance.now(), statT = 0;
+function frame(now) {
+  const real = Math.min(0.1, (now - prev) / 1000); prev = now;
+  if (!S.paused) {
+    let left = real * S.speed;
+    while (left > 1e-6) { const h = Math.min(0.05, left); step(h); left -= h; }
+  }
+  draw();
+  if (now - statT > 250) { statT = now; updateStats(); }
+  requestAnimationFrame(frame);
+}
+// warm up so there is traffic on screen straight away
+for (let i = 0; i < 1200; i++) step(0.05);
+statsT0 = simT; hist = []; lastHist = simT;
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
